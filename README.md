@@ -14,14 +14,14 @@
 
 ## Обзор
 
-`AiNoCraft_dep` - это не полный application stack и не monorepo-compose для всего проекта. Этот репозиторий отвечает за production-инфраструктуру вокруг AiNoCraft:
+`AiNoCraft_dep` — не полный application stack и не monorepo-compose для всего проекта. Этот репозиторий отвечает за production-инфраструктуру вокруг AiNoCraft:
 
 - Nginx как внешний reverse proxy и точка TLS-терминации;
 - PostgreSQL, Redis и MinIO как базовые сервисы проекта;
 - Databasus как отдельный сервис на локальном loopback-порту;
 - единая docker-сеть `ainocraft_network`, в которую должны входить frontend и backend контейнеры.
 
-Именно этот слой связывает публичные домены `ainocraft.com`, `api.ainocraft.com` и `storage.ainocraft.com` с внутренними сервисами проекта.
+Этот слой связывает публичные домены `ainocraft.com`, `api.ainocraft.com` и `storage.ainocraft.com` с внутренними сервисами проекта.
 
 ## Что входит в deployment-слой
 
@@ -64,7 +64,7 @@ flowchart LR
 | `https://storage.ainocraft.com` | MinIO API / presigned uploads | `minio:9000` |
 | `https://<IP>` | прямой HTTPS по IP | блокируется ответом `444` |
 
-## Что важно знать до запуска
+## Что проверить до запуска
 
 Этот репозиторий ожидает, что контейнеры приложений находятся в той же сети `ainocraft_network` и доступны по DNS-именам:
 
@@ -72,9 +72,9 @@ flowchart LR
 - `backend`
 - `minio`
 
-С frontend всё уже согласовано: `AiNoCraft_front/docker-compose.prod.yml` поднимает сервис `frontend` в внешней сети `ainocraft_network`.
+С frontend всё уже согласовано: `AiNoCraft_front/docker-compose.prod.yml` поднимает сервис `frontend` во внешней сети `ainocraft_network`.
 
-С backend есть важная особенность: текущий `AiNoCraft_back/docker-compose.yml` сам поднимает `postgres`, `redis` и `minio`, то есть он рассчитан на self-contained запуск и дублирует инфраструктуру из этого репозитория. Для production-модели с `AiNoCraft_dep` лучше запускать backend как отдельный контейнер или выделить из backend-compose только сервис `backend`.
+С backend есть важная особенность: текущий `AiNoCraft_back/docker-compose.yml` сам поднимает `postgres`, `redis` и `minio`. Он рассчитан на self-contained запуск и дублирует инфраструктуру из этого репозитория. Для production-модели с `AiNoCraft_dep` лучше запускать backend как отдельный контейнер или выделить из backend-compose только сервис `backend`.
 
 ## Требования к окружению
 
@@ -86,7 +86,7 @@ flowchart LR
 3. TLS-сертификаты в каталоге `/opt/ainocraft-project/ssl`.
 4. Общий `.env` файл по пути `/opt/ainocraft-project/.env`.
 
-Nginx-монтирование ожидает именно такие файлы сертификатов внутри контейнера:
+Nginx-монтирование ждёт такие файлы сертификатов внутри контейнера:
 
 - `/etc/nginx/ssl/fullchain.pem`
 - `/etc/nginx/ssl/privkey.pem`
@@ -102,7 +102,7 @@ Nginx-монтирование ожидает именно такие файлы
 docker compose up -d --build
 ```
 
-Это создаст сеть `ainocraft_network`, Nginx и stateful-сервисы.
+Команда создаст сеть `ainocraft_network`, Nginx и stateful-сервисы.
 
 ### Шаг 2. Поднять frontend в той же сети
 
@@ -116,7 +116,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 ### Шаг 3. Поднять backend без дублирования infra
 
-Рекомендуемый текущий подход - запускать только контейнер `backend`, не дублируя `postgres`, `redis` и `minio` из `AiNoCraft_back/docker-compose.yml`.
+Рекомендуемый текущий подход — запускать только контейнер `backend`, не дублируя `postgres`, `redis` и `minio` из `AiNoCraft_back/docker-compose.yml`.
 
 Минимальный пример backend-only compose:
 
@@ -138,11 +138,11 @@ networks:
     external: true
 ```
 
-После этого Nginx сможет резолвить `backend:8000` и маршрутизировать API-запросы на `api.ainocraft.com`.
+После этого Nginx сможет резолвить `backend:8000` и отправлять API-запросы на `api.ainocraft.com`.
 
 ## Переменные окружения
 
-`AiNoCraft_dep` сам не хранит `.env.example`, но фактически использует один общий env-файл по пути `/opt/ainocraft-project/.env`.
+`AiNoCraft_dep` не хранит собственный `.env.example`, но фактически использует один общий env-файл по пути `/opt/ainocraft-project/.env`.
 
 Минимальные группы переменных, которые точно понадобятся:
 
@@ -154,13 +154,13 @@ networks:
 | `AUTH_*` | JWT и игровые токены backend-сервиса |
 | `SMTP_*` | письма регистрации и сброса пароля |
 
-Практический источник для начального шаблона - `AiNoCraft_back/.env.docker.example`.
+Практический источник для начального шаблона — `AiNoCraft_back/.env.docker.example`.
 
-> Важно: в текущем состоянии репозитория env-имена для application-layer и container-layer нужно сверить отдельно перед production rollout, особенно для `postgres` и `minio`, потому что образы сервисов и backend-приложение могут ожидать не полностью одинаковые имена переменных.
+> Перед production rollout стоит отдельно сверить env-имена для application-layer и container-layer, особенно для `postgres` и `minio`. Образы сервисов и backend-приложение могут ждать разные имена переменных.
 
 ## Безопасность и сетевой периметр
 
-| Механика | Как реализовано |
+| Механика | Реализация |
 | --- | --- |
 | HTTP -> HTTPS | глобальный 301 redirect |
 | HTTPS по IP | блокируется через `return 444` |
@@ -190,13 +190,13 @@ docker compose logs -f postgres redis minio databasus
 
 ## Ограничения текущей схемы
 
-- Этот репозиторий не поднимает frontend и backend автоматически.
-- Nginx жёстко ожидает имена upstream-сервисов `frontend`, `backend` и `minio`.
-- Production-схема сейчас распределена по нескольким репозиториям и не сведена в единый compose-файл.
-- Для полного zero-to-prod сценария стоило бы добавить отдельный `backend-only` compose и шаблон `.env.example` прямо в этот репозиторий.
+- этот репозиторий не поднимает frontend и backend автоматически;
+- Nginx жёстко ожидает имена upstream-сервисов `frontend`, `backend` и `minio`;
+- production-схема сейчас распределена по нескольким репозиториям и не сведена в единый compose-файл;
+- для полного zero-to-prod сценария стоит добавить отдельный `backend-only` compose и шаблон `.env.example` прямо в этот репозиторий.
 
 ## Связанные части проекта
 
-- `AiNoCraft_front` - production frontend container в сети `ainocraft_network`.
-- `AiNoCraft_back` - backend image, API, authserver и бизнес-логика.
-- `AiNoCraft_Launc` - desktop launcher, который использует `api.ainocraft.com` и `storage.ainocraft.com`.
+- `AiNoCraft_front` — production frontend container в сети `ainocraft_network`.
+- `AiNoCraft_back` — backend image, API, authserver и бизнес-логика.
+- `AiNoCraft_Launc` — desktop launcher, который использует `api.ainocraft.com` и `storage.ainocraft.com`.
