@@ -1,36 +1,64 @@
-# name: Deploy (self-hosted)
+name: Deploy (self-hosted)
 
-# on:
-#   push:
-#     branches: ["main"]
-#   workflow_dispatch:
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
 
-# concurrency:
-#   group: deploy-main
-#   cancel-in-progress: true
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
 
-# jobs:
-#   deploy:
-#     runs-on: [self-hosted, linux]
-#     steps:
-#       - name: Checkout
-#         uses: actions/checkout@v4
-#         with:
-#           fetch-depth: 0
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux]
+    steps:
+      - name: Configure git safe directory
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-#       - name: Reset workspace to trigger SHA
-#         shell: bash
-#         run: |
-#           set -euo pipefail
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-#           git fetch --prune origin
-#           git reset --hard "$GITHUB_SHA"
-#           git clean -fdx
+      - name: Reset workspace to trigger SHA
+        shell: bash
+        run: |
+          set -euo pipefail
 
-#       - name: Deploy (docker compose)
-#         shell: bash
-#         run: |
-#           set -euo pipefail
+          git fetch --prune origin
+          git reset --hard "$GITHUB_SHA"
+          git clean -fdx
 
-#           docker compose up -d --no-recreate nginx databasus postgres redis minio
+      - name: Deploy (docker compose)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker compose up -d --build nginx
+          docker compose up -d --no-recreate databasus postgres redis minio
+
+      - name: Health check
+        shell: bash
+        run: |
+          echo "Checking infrastructure health..."
+          
+          # Wait for services
+          sleep 5
+          
+          # Check Postgres
+          docker exec postgres pg_isready -U postgres || echo "⚠️ PostgreSQL health check failed"
+          
+          # Check Redis
+          docker exec redis redis-cli ping || echo "⚠️ Redis health check failed"
+          
+          # Check MinIO
+          docker exec minio curl -f http://localhost:9000/minio/health/live || echo "⚠️ MinIO health check failed"
+          
+          # Check Nginx
+          docker exec nginx-proxy curl -f http://localhost:80 -I 2>/dev/null | head -1 || echo "⚠️ Nginx health check failed"
+          
+          echo "✅ Infrastructure deployment complete"
 

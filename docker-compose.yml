@@ -1,14 +1,13 @@
 services:
 
   nginx:
-    image: nginx:1.25
+    build: ./nginx
     container_name: nginx-proxy
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d
       - /opt/ainocraft-project/ssl:/etc/nginx/ssl:ro
     networks:
       - ainocraft_network
