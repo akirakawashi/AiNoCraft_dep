@@ -200,5 +200,3 @@ docker compose logs -f postgres redis minio databasus
 - `AiNoCraft_front` - production frontend container в сети `ainocraft_network`.
 - `AiNoCraft_back` - backend image, API, authserver и бизнес-логика.
 - `AiNoCraft_Launc` - desktop launcher, который использует `api.ainocraft.com` и `storage.ainocraft.com`.
-
-Если нужно, следующим шагом можно собрать и единый production README на верхнем уровне всего workspace с рекомендованным порядком запуска всех частей проекта.
