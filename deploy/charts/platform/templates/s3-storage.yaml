@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: s3-storage
+  labels:
+    app.kubernetes.io/name: s3-storage
+    {{- include "platform.commonLabels" . | nindent 4 }}
+spec:
+  serviceName: s3-storage
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: s3-storage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: s3-storage
+    spec:
+      containers:
+        - name: s3-storage
+          image: {{ .Values.s3Storage.image | quote }}
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          envFrom:
+            - secretRef:
+                name: {{ .Values.s3Storage.secretName }}
+          env:
+            # Legacy compose remaps MinIO root creds from the S3_STORAGE_* keys.
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3Storage.secretName }}
+                  key: S3_STORAGE_ACCESS_KEY
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.s3Storage.secretName }}
+                  key: S3_STORAGE_SECRET_KEY
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+            initialDelaySeconds: 5
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.storageClassName | quote }}
+        resources:
+          requests:
+            storage: {{ .Values.s3Storage.storage | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3-storage
+  labels:
+    app.kubernetes.io/name: s3-storage
+    {{- include "platform.commonLabels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: s3-storage
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+    - name: console
+      port: 9001
+      targetPort: console

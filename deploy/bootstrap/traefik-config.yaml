@@ -1,0 +1,41 @@
+# Cluster-level Traefik config for the Traefik that k3s installs (does NOT disable it).
+# k3s watches HelmChartConfig(name=traefik, ns=kube-system) and re-applies the bundled
+# Traefik chart with these values merged in.
+#
+# This is the infra layer (entrypoints / global redirect / client IP). The actual routes
+# are per-app Ingress objects (frontend, backend, minecraft/bluemap, storage), which
+# Traefik discovers automatically — see ../../README.md §8.
+#
+# NOTE: verify the value keys against the Traefik chart version k3s ships:
+#   kubectl -n kube-system get helmchart traefik -o yaml
+# The `ports.web.redirectTo.port` form is current (Traefik v3 chart).
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    # Global HTTP -> HTTPS redirect (replaces the nginx `return 301 https://`).
+    ports:
+      web:
+        redirectTo:
+          port: websecure
+    # See the real client IP instead of the node's SNAT address. Safe on one node.
+    service:
+      spec:
+        externalTrafficPolicy: Local
+    # Traefik dashboard/API, reachable ONLY via port-forward to the `traefik` entrypoint
+    # (8080, expose.default:false -> never in the LoadBalancer). BOTH parts are required:
+    #   - additionalArguments turns on the API handler (api@internal) at the process level.
+    #     The k3s-bundled chart does NOT enable it by default, so the IngressRoute alone
+    #     404s. `--api.dashboard=true` implies `--api=true`. Changing args restarts Traefik.
+    #   - ingressRoute.dashboard exposes api@internal on the `traefik` entrypoint (8080).
+    # Reach it with:
+    #   kubectl -n kube-system port-forward deploy/traefik 8080:8080  ->  http://localhost:8080/dashboard/
+    # (Port 8000 is the `web`/HTTP entrypoint for normal ingress traffic — not this.)
+    additionalArguments:
+      - "--api.dashboard=true"
+    ingressRoute:
+      dashboard:
+        enabled: true

@@ -1,0 +1,21 @@
+platform chart deployed to namespace {{ .Release.Namespace }}.
+
+Shared infra services (ClusterIP, in-cluster DNS names used by the apps):
+  - postgres:5432
+  - redis:6379
+  - s3-storage:9000  (S3 API)   / s3-storage:9001 (console)
+  - databasus:4005
+
+Split-secrets model — these Secrets must exist in {{ .Release.Namespace }} (created by
+the deploy CI from GitHub Actions secrets), datastores AND consumer apps reference them:
+  - {{ .Values.postgres.secretName }}   POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DATABASE
+  - {{ .Values.redis.secretName }}      REDIS_PASSWORD
+  - {{ .Values.s3Storage.secretName }}      S3_STORAGE_ACCESS_KEY / S3_STORAGE_SECRET_KEY
+
+If pods are stuck in CreateContainerConfigError, a referenced Secret is missing.
+Create them, e.g.:
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ .Values.postgres.secretName }} \
+    --from-literal=POSTGRES_USER=... --from-literal=POSTGRES_PASSWORD=... --from-literal=POSTGRES_DATABASE=...
+
+Check status:
+  kubectl -n {{ .Release.Namespace }} get pods,svc,pvc

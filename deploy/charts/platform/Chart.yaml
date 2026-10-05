@@ -1,0 +1,6 @@
+apiVersion: v2
+name: platform
+description: AiNoCraft shared infrastructure (postgres, redis, s3-storage, databasus) for k3s
+type: application
+version: 0.1.0
+appVersion: "1.0"

@@ -1,0 +1,65 @@
+# Idempotent bootstrap of LuckPerms' own database + role INSIDE the shared postgres.
+# Runs as a post-install/post-upgrade Helm hook (after postgres is up). Creates a
+# `luckperms` role that OWNS a dedicated `luckperms` database — so the Minecraft server's
+# LuckPerms has durable, isolated storage and cannot read the backend's tables.
+# Safe to re-run every deploy (create-if-missing + keep the password in sync).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: luckperms-db-init
+  labels:
+    app.kubernetes.io/name: luckperms-db-init
+    {{- include "platform.commonLabels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: luckperms-db-init
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init
+          image: {{ .Values.postgres.image | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              export PGHOST=postgres PGPORT=5432 \
+                     PGUSER="$POSTGRES_USER" PGPASSWORD="$POSTGRES_PASSWORD" PGDATABASE="$POSTGRES_DATABASE"
+              echo "waiting for postgres..."
+              until psql -c '\q' 2>/dev/null; do sleep 2; done
+              # role (create if missing) — DO block is safe with -c
+              psql -v ON_ERROR_STOP=1 -c \
+                "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='$LUCKPERMS_DB_USER') THEN CREATE ROLE \"$LUCKPERMS_DB_USER\" LOGIN; END IF; END \$\$;"
+              # keep the password in sync with the Secret. psql does NOT interpolate :'vars'
+              # in -c, so build the SQL string literal in the shell: double any single quote
+              # (standard_conforming_strings is on by default -> backslashes stay literal).
+              LP_PW_ESC=$(printf '%s' "$LUCKPERMS_DB_PASSWORD" | sed "s/'/''/g")
+              psql -v ON_ERROR_STOP=1 -c \
+                "ALTER ROLE \"$LUCKPERMS_DB_USER\" WITH LOGIN PASSWORD '$LP_PW_ESC'"
+              # database owned by the role (CREATE DATABASE can't run in a txn/DO -> guard in shell)
+              if ! psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ .Values.luckperms.database }}'" | grep -q 1; then
+                psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE {{ .Values.luckperms.database }} OWNER \"$LUCKPERMS_DB_USER\""
+              fi
+              echo "luckperms db/role ready."
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.postgres.secretName }}, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.postgres.secretName }}, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DATABASE
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.postgres.secretName }}, key: POSTGRES_DATABASE }
+            - name: LUCKPERMS_DB_USER
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.luckperms.secretName }}, key: LUCKPERMS_DB_USER }
+            - name: LUCKPERMS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.luckperms.secretName }}, key: LUCKPERMS_DB_PASSWORD }

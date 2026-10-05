@@ -1,0 +1,65 @@
+# Shared infra for the ainocraft namespace. Mirrors the legacy
+# AiNoCraft-deploy/docker-compose.yml, but as StatefulSets + PVCs + Services.
+#
+# Split-secrets model: each datastore's credentials live in ONE k8s Secret owned by
+# the platform side. Consumers (e.g. backend) reference the SAME Secret by name via
+# envFrom — single source of truth, no value duplication, no drift.
+#
+# The chart references these Secrets by name; it does NOT create them. Values are
+# provided out of band and materialised as Secrets before deploy. With GitHub Actions
+# secrets (the chosen mechanism), the deploy CI does e.g.:
+#   echo "$POSTGRES_CREDENTIALS" > pg.env   # from a GitHub Actions secret
+#   kubectl -n ainocraft create secret generic postgres-credentials \
+#     --from-env-file=pg.env --dry-run=client -o yaml | kubectl apply -f -
+# (Switching to SOPS later changes only this creation step, not the chart.)
+
+# k3s ships local-path as the default StorageClass.
+storageClassName: local-path
+
+# cert-manager ClusterIssuer for Ingress TLS. cert-manager auto-issues and auto-renews
+# the certs — no manual cert files. Use letsencrypt-staging while testing (avoids LE
+# rate limits), then flip to letsencrypt-prod.
+ingress:
+  clusterIssuer: letsencrypt-prod
+
+postgres:
+  image: postgres:18.1-trixie
+  storage: 10Gi
+  # Secret keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DATABASE.
+  # POSTGRES_DB is remapped from POSTGRES_DATABASE (legacy compose does the same).
+  secretName: postgres-credentials
+
+redis:
+  image: redis:8.4.0
+  storage: 2Gi
+  # Secret keys: REDIS_PASSWORD.
+  secretName: redis-credentials
+
+s3Storage:
+  image: pgsty/minio:RELEASE.2026-06-18T00-00-00Z
+  storage: 20Gi
+  # Secret keys: S3_STORAGE_ACCESS_KEY, S3_STORAGE_SECRET_KEY (remapped to MINIO_ROOT_*).
+  secretName: s3-credentials
+  # storage.ainocraft.com -> s3-storage:9000 (the S3 API). Traefik streams request
+  # bodies by default and imposes no size limit, so the nginx `client_max_body_size 100M`
+  # + `proxy_request_buffering off` are the default here — no middleware needed.
+  ingress:
+    enabled: true
+    host: storage.ainocraft.com
+    tlsSecretName: s3-storage-tls
+
+databasus:
+  image: databasus/databasus:v3.7.0
+  storage: 2Gi
+  # databasus has its OWN UI login (DATABASUS_USER / DATABASUS_PASSWORD). DB connections
+  # are configured in its UI and persisted to the PVC, so it needs only its own creds.
+  secretName: databasus-credentials
+
+# LuckPerms (Minecraft server) stores its data in a DEDICATED `luckperms` database INSIDE
+# the SAME postgres — durable and isolated from the backend's tables. The luckperms-db-init
+# hook creates the role + database idempotently (the role owns its own DB). Nothing else in
+# this chart uses it; the minecraft chart connects with luckperms-credentials.
+# Secret keys: LUCKPERMS_DB_USER, LUCKPERMS_DB_PASSWORD.
+luckperms:
+  database: luckperms
+  secretName: luckperms-credentials
